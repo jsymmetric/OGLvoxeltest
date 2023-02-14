@@ -1,0 +1,101 @@
+
+#version 460 core
+
+layout(local_size_x = 16,local_size_y = 16,local_size_z = 1) in;
+
+layout(std430,binding = 0) buffer mapdata{
+	int map[16*16*16];
+
+};
+layout(std430,binding = 1) buffer facedata{
+	int position; 
+	ivec4 Faces[100*100*4];
+};
+layout(std430,binding = 2) buffer usefulfloats{
+	float rs;
+	float rc;
+	float xpos;
+	float ypos;	
+	float zpos;
+};
+ivec2 xface = ivec2(1,0);
+ivec2 yface = ivec2(0,1);
+int updown = 1;
+int getMap(int xx,int yy, int zz){
+if(gl_LocalInvocationID.x+xx < 0 || gl_LocalInvocationID.x+xx > 15 || gl_LocalInvocationID.y+ yy < 0 ||  gl_LocalInvocationID.y+ yy > 15 || zz > 16){
+return 0;
+}
+return map[16*16*(gl_LocalInvocationID.x+xx) + 16*(gl_GlobalInvocationID.y+yy)+zz];
+};
+void sampleFace(ivec3 place){
+int oc = getMap(place.x,0,place.z);
+if(oc == 0){
+int pointer = atomicAdd(position,1);
+Faces[pointer] = ivec4(gl_GlobalInvocationID.x,gl_GlobalInvocationID.y,place.z,place.x);
+};
+if(getMap(0,place.y,place.z) == 0){
+int pointer = atomicAdd(position,1);
+Faces[pointer] = ivec4(gl_GlobalInvocationID.x,gl_GlobalInvocationID.y,place.z,place.y*2);
+};
+if(place.z > -1*zpos){
+updown = -1;
+} 
+if(getMap(0,0,place.z+updown) == 0){
+int pointer = atomicAdd(position,1);
+Faces[pointer] = ivec4(gl_GlobalInvocationID.x,gl_GlobalInvocationID.y,place.z,3*updown);
+};
+};
+
+float distc(ivec2 offset){
+float x = float(gl_GlobalInvocationID.x + offset.x) +xpos;
+float y = float(gl_GlobalInvocationID.y + offset.y) +ypos;
+return sqrt(x*x + y*y);
+};
+
+void compBlock(int level){
+ivec3 sides = ivec3(xface.x,yface.y,level);
+if(getMap(0,0,level) > 0){
+sampleFace(sides);
+};
+};
+
+
+int inBounds(vec2 loc){
+	int inb = 0;
+	float x = loc.x;
+	float y = loc.y;
+	if(y > 0 && y < 50){
+		if(abs(-1*y - 5) > abs(x)){
+			inb = 1;
+		}
+	} 
+	return 1;
+}
+uniform layout(size4x32,binding = 0) iimage2D pBuffer;
+void main(){
+//if (gl_GlobalInvocationID.x == 14 && gl_GlobalInvocationID.y == 7){
+//for (int t = 0; t < 10000000; t++){
+//atomicAdd(position,1);
+//}
+//}
+mat2 rot;
+rot[0] = vec2(rs,rc);
+rot[1] = vec2(rc,-rs);
+int xa = int(gl_GlobalInvocationID.x) + 0;
+int ya = int(gl_GlobalInvocationID.y) - 20;
+vec2 loc = rot*vec2(xa,ya);
+if (inBounds(loc) == 1){
+float front = distc(ivec2(0,1));
+float side = distc(ivec2(1,0));
+float base = distc(ivec2(0,0));
+if(front > base){
+yface = ivec2(0,-1);
+};
+if(side > base){
+xface = ivec2(-1,0);
+};
+for(int i = 0; i < 16;i++){
+compBlock(i);
+};
+};
+};

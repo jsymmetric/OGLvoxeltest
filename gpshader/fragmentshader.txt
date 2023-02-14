@@ -1,0 +1,25 @@
+#version 460 core
+
+in vec2 texcoord0;
+out vec4 color;
+layout(row_major,std140,binding = 2) buffer usefulfloats{
+	float rs;
+	float rc;
+	float xpos;
+	float ypos;
+	float zpos;
+};
+uniform layout(binding = 0 , size4x32) iimage2D uSampler;
+void main()
+{	
+	ivec2 si = imageSize(uSampler);
+	int x = int(texcoord0.x*si.x);
+	int y = int(texcoord0.y*si.y);
+	ivec2 coord = ivec2(x,y);
+	color = imageLoad(uSampler,coord);
+	//if(color.w == 300){
+	//float rsin = *asin(rs);
+	//color =  imageLoad(uSampler,bc);
+	//}
+	//vec4 color = vec4(100,100,0,0);
+}

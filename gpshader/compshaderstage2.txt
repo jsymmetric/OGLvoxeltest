@@ -1,0 +1,124 @@
+	
+
+#version 460 compatibility
+
+layout(local_size_x = 25,local_size_y = 25,local_size_z = 1) in;
+
+layout(row_major,std430,binding = 0) buffer mapdata{
+	int map[16*16*16];
+
+};
+layout(row_major,std430,binding = 1) buffer facedata{
+	int position;
+	ivec4 Faces[];
+};
+layout(row_major,std140,binding = 2) buffer usefulfloats{
+	float rs;
+	float rc;
+	float xpos;
+	float ypos;
+	float zpos;
+};
+uniform layout(size4x32,binding = 0) coherent iimage2D uSampler;
+float xfov = 1;
+float zfov = 0.5625;
+
+int getMap(int x,int y, int z){
+return map[16*16*x+16*y+z];
+};
+ivec3 getcolor(int color){
+if(color == 0){
+return ivec3(250,0,250);
+}
+if(color == 1){
+return ivec3(250,0,0);
+};
+if(color == 2){
+return ivec3(0,250,0);
+};
+if(color == 3){
+return ivec3(0,0,250);
+};
+if(color == 4){
+return ivec3(200,200,200);
+}
+};
+void computePixel(vec3 loc,vec3 center,mat3 rot,int color){
+vec3 pos = center + loc;
+ivec2 bufferpos;
+pos = pos*rot;
+float xproj = 1/(xfov*(float(pos.y)+1));
+float zproj = 1/(zfov*(float(pos.y)+1));
+vec3 projector = vec3(xproj,1,zproj);
+vec3 pixelPos = pos*projector;
+bufferpos.x = int(pixelPos.x*1920) + 960;
+bufferpos.y = int(pixelPos.z*1080) + 540;
+if(bufferpos.x < 1920){
+if(bufferpos.y < 1080){
+if(imageLoad(uSampler,ivec2(bufferpos.x,bufferpos.y)).w > pixelPos.y && pixelPos.y > 0){
+ivec3 kolor = getcolor(color); 
+imageStore(uSampler,ivec2(bufferpos.x,bufferpos.y),ivec4(kolor.x,kolor.y,kolor.z,pixelPos.y));
+};
+};
+};
+};
+void main(){
+int fangle = 0;
+vec3 center;
+vec3 basis = vec3(0,0,0);
+mat3 rot = mat3(rc,rs,0,-rs,rc,0,0,0,1);
+ivec4 face = Faces[gl_WorkGroupID.x];
+center.y = face.y + ypos;
+center.x = face.x + xpos;
+center.z = face.z + zpos;
+//if(face.y < 0){
+//for(int y = 0;y<90000000;y++){
+//atomicAdd(position,y);
+//}
+//}
+if(abs(face.w) == 1){
+float offset = float(face.w)*0.5;
+center.x = center.x+offset;
+fangle = 0;
+basis = vec3(0,1,1);
+};
+if(abs(face.w) == 2){
+float offset = float(face.w)*0.5*0.5;
+center.y = center.y+offset;
+fangle = 90;
+basis = vec3(1,0,1);
+};
+if(abs(face.w) == 3){
+center.z = center.z+0.5*face.w/3;
+basis = vec3(1,1,0);
+};
+vec2 rcen = ivec3(rot*center).xy;
+int size = int(2*1920/(xfov*rcen.y+1)) + 1;
+float arc = acos(rc);
+int sizer = size; //int(size*cos(arc+fangle));
+int xwidth = 25;
+if(sizer > 25){
+xwidth = int(sizer/25);
+}
+int sizez = int(2*1920/(zfov*rcen.y+1)) + 1;
+int zheight =25;
+if(sizez > 25){
+zheight = int(sizez/25);
+}
+for(int i = 0; i <= xwidth*basis.x; i++){
+for(int u  = 0; u <= xwidth*basis.y;u++)
+for(int e = 0; e <= zheight*basis.z;e++){
+float x = float(gl_LocalInvocationID.x)/25 + float(i)/(xwidth*25) -0.5;
+float y = (float(gl_LocalInvocationID.y)/25 + float(u)/(xwidth*25))*basis.x + (float(gl_LocalInvocationID.x)/25 + float(u)/(xwidth*25))*basis.z - 0.5;
+float z = float(gl_LocalInvocationID.y)/25 + float(e)/(zheight*25)-0.5;  
+vec3 mask = vec3(x,y,z);
+//vec3 mask = vec3(float(i)/50,float(u)/50,float(e)/50);
+vec3 loc = mask*basis;
+int color = getMap(face.x,face.y,face.z);
+if(abs(loc.x) > 0.45 || abs(loc.y) > 0.45 || abs(loc.z) > 0.45){
+color =4;
+}
+computePixel(loc,center,rot,color);
+};
+};
+};
